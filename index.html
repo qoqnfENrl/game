@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>우주 전투 비행 게임</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: black; overflow: hidden; }
+    canvas { display: block; margin: 0 auto; background: url('https://images.unsplash.com/photo-1573495804688-6a19f4af36a7?fit=crop&w=800&q=80'); background-size: cover; }
+  </style>
+</head>
+<body>
+<canvas id="gameCanvas" width="480" height="640"></canvas>
+<audio id="bgm" loop autoplay>
+  <source src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_1505ac37d1.mp3" type="audio/mpeg">
+</audio>
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+const playerImg = new Image();
+playerImg.src = "https://cdn-icons-png.flaticon.com/512/1060/1060332.png";
+const enemyImg = new Image();
+enemyImg.src = "https://cdn-icons-png.flaticon.com/512/616/616408.png";
+const specialEnemyImg = new Image();
+specialEnemyImg.src = "https://cdn-icons-png.flaticon.com/512/1172/1172639.png";
+
+let player = {
+  x: 240 - 24,
+  y: 550,
+  width: 48,
+  height: 48,
+  speed: 4,
+  missiles: 1,
+  supportPlanes: 0
+};
+
+let bullets = [], enemies = [], specialEnemies = [], items = [], supportBullets = [];
+let frame = 0, stage = 1, boss = null;
+let keys = {};
+
+function drawPlayer() {
+  ctx.drawImage(playerImg, player.x, player.y, player.width, player.height);
+  if (player.supportPlanes > 0) {
+    for (let i = 0; i < player.supportPlanes; i++) {
+      ctx.drawImage(playerImg, player.x - 40 + i * 80, player.y + 20, 32, 32);
+    }
+  }
+}
+
+function movePlayer() {
+  if (keys["ArrowLeft"] && player.x > 0) player.x -= player.speed;
+  if (keys["ArrowRight"] && player.x < canvas.width - player.width) player.x += player.speed;
+  if (keys["ArrowUp"] && player.y > 0) player.y -= player.speed;
+  if (keys["ArrowDown"] && player.y < canvas.height - player.height) player.y += player.speed;
+}
+
+function shoot() {
+  if (frame % 15 === 0) {
+    for (let i = 0; i < player.missiles; i++) {
+      bullets.push({ x: player.x + 20 + i * 10 - 5 * (player.missiles - 1), y: player.y, dy: -8 });
+    }
+  }
+  if (player.supportPlanes > 0 && frame % 20 === 0) {
+    for (let i = 0; i < player.supportPlanes; i++) {
+      supportBullets.push({ x: player.x - 40 + i * 80 + 16, y: player.y + 20, dy: -6 });
+    }
+  }
+}
+
+function drawBullets() {
+  ctx.fillStyle = "yellow";
+  bullets.forEach((b, i) => {
+    b.y += b.dy;
+    ctx.fillRect(b.x, b.y, 4, 10);
+    if (b.y < 0) bullets.splice(i, 1);
+  });
+  supportBullets.forEach((b, i) => {
+    b.y += b.dy;
+    ctx.fillRect(b.x, b.y, 4, 8);
+    if (b.y < 0) supportBullets.splice(i, 1);
+  });
+}
+
+function spawnEnemies() {
+  if (frame % Math.max(60 - stage * 2, 20) === 0) {
+    enemies.push({ x: Math.random() * 440, y: 0, hp: 1 });
+  }
+  if (frame % (60 * 22.5) === 0) {
+    specialEnemies.push({ x: Math.random() * 400, y: 0, hp: 3 });
+  }
+}
+
+function drawEnemies() {
+  enemies.forEach((e, i) => {
+    e.y += 2 + stage;
+    ctx.drawImage(enemyImg, e.x, e.y, 40, 40);
+    if (e.y > canvas.height) enemies.splice(i, 1);
+  });
+  specialEnemies.forEach((e, i) => {
+    e.y += 1.5;
+    ctx.drawImage(specialEnemyImg, e.x, e.y, 48, 48);
+    if (e.y > canvas.height) specialEnemies.splice(i, 1);
+  });
+}
+
+function checkCollision() {
+  bullets.concat(supportBullets).forEach((b, bi) => {
+    enemies.forEach((e, ei) => {
+      if (b.x > e.x && b.x < e.x + 40 && b.y > e.y && b.y < e.y + 40) {
+        enemies.splice(ei, 1);
+        bullets.splice(bi, 1);
+      }
+    });
+    specialEnemies.forEach((e, ei) => {
+      if (b.x > e.x && b.x < e.x + 48 && b.y > e.y && b.y < e.y + 48) {
+        e.hp--;
+        bullets.splice(bi, 1);
+        if (e.hp <= 0) {
+          specialEnemies.splice(ei, 1);
+          dropItem(e.x, e.y);
+        }
+      }
+    });
+  });
+}
+
+function dropItem(x, y) {
+  let type = Math.floor(Math.random() * 4) + 1;
+  items.push({ x, y, type });
+}
+
+function drawItems() {
+  ctx.fillStyle = "cyan";
+  items.forEach((item, i) => {
+    item.y += 2;
+    ctx.fillRect(item.x, item.y, 16, 16);
+    if (item.y > canvas.height) items.splice(i, 1);
+    if (
+      item.x < player.x + player.width &&
+      item.x + 16 > player.x &&
+      item.y < player.y + player.height &&
+      item.y + 16 > player.y
+    ) {
+      if (item.type === 1) player.missiles = 2;
+      else if (item.type === 2) player.missiles = 3;
+      else if (item.type === 3) player.supportPlanes = 1;
+      else if (item.type === 4) player.supportPlanes = 2;
+      items.splice(i, 1);
+    }
+  });
+}
+
+function stageProgress() {
+  if (frame === 60 * 90 && !boss) {
+    boss = { x: 200, y: 0, hp: 20 };
+  }
+  if (boss) {
+    boss.y += 1;
+    ctx.fillStyle = "red";
+    ctx.fillRect(boss.x, boss.y, 80, 80);
+    bullets.concat(supportBullets).forEach((b, bi) => {
+      if (b.x > boss.x && b.x < boss.x + 80 && b.y > boss.y && b.y < boss.y + 80) {
+        boss.hp--;
+        bullets.splice(bi, 1);
+        if (boss.hp <= 0) {
+          boss = null;
+          stage++;
+          frame = 0;
+        }
+      }
+    });
+  }
+}
+
+function gameLoop() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  frame++;
+  movePlayer();
+  drawPlayer();
+  shoot();
+  drawBullets();
+  spawnEnemies();
+  drawEnemies();
+  drawItems();
+  checkCollision();
+  stageProgress();
+  requestAnimationFrame(gameLoop);
+}
+
+document.addEventListener("keydown", (e) => keys[e.key] = true);
+document.addEventListener("keyup", (e) => keys[e.key] = false);
+
+playerImg.onload = () => gameLoop();
+</script>
+</body>
+</html>
